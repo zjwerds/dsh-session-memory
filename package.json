@@ -1,0 +1,53 @@
+{
+  "name": "dsh-session-memory",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness host-only memory: per-turn project memory (<=300 chars, auto-injected per session) plus a long-term identity/credentials vault ($DSH_HOME/memory/vault.json, on-demand user-profile skill + scoped vault_read, tiered outbound-only leak guard).",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22.19",
+    "dsh": ">=0.2.0-rc.1 <0.3.0-0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "memory",
+    "session-memory",
+    "project-memory",
+    "user-profile",
+    "credentials",
+    "vault",
+    "skill"
+  ],
+  "license": "MIT",
+  "author": "糟佳伟",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zjwerds/dsh-session-memory.git"
+  },
+  "homepage": "https://github.com/zjwerds/dsh-session-memory#readme",
+  "bugs": {
+    "url": "https://github.com/zjwerds/dsh-session-memory/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
+
+

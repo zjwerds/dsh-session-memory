@@ -1,0 +1,28 @@
+# dsh-session-memory bundle patch：把 host-only 记忆插件插入当前 profile 的插件行。
+#
+# 通过 package.json 的 `dsh.bundle.patch` 作为 profile bundle 层应用；行是裸插件名，
+# host 半（exports "."）负责：
+#   - 每回合 turn/end 后异步一次 LLM 调用 → 项目记忆（注入当前会话）+ 用户身份/账号密码；
+#   - system-prompt section（order 160 项目记忆、161 固定规则）；
+#   - session_memory_read / vault_read 工具、user-profile skill、分级外发 guard。
+#
+# 可选 config（全部可缺省，完整字段见 lib/config.js）：
+#   config:
+#     dataDir: ''            # 空 = $DSH_HOME/memory
+#     provider: ''           # 空 = 会话自己的路由；再缺省 deepseek-official
+#     model: ''              # 空 = 会话自己的路由；再缺省 deepseek-flash
+#     projectMaxChars: 300
+#     entryMaxChars: 30
+#     identityMaxChars: 60     # 用户身份预算（称呼/姓名/职业/语言/邮箱/手机）
+#     credentialsMaxChars: 60  # 账号密码预算（longtermMaxChars 为兼容别名）
+#     guardMode: 'balanced'    # balanced | strict | off：只拦危险外发，本地工具放行
+#     trustedDomains: []       # balanced 下 web_fetch 白名单域名
+#     timeoutMs: 25000
+#     maxInputChars: 4000
+#     analysisReasoningEffort: 'off'  # 后台分析推理强度；null/'' = 不传（换模型逃生口）
+#     credentialPatternGuard: true    # 通用凭据形态检测（关键词上下文 / 高熵 token）
+#     credentialTokenMinChars: 8      # 高熵 token 视为凭据的最小码点长度
+#     debug: false
+- insert:
+    - id: session-memory
+      name: 'dsh-session-memory'
