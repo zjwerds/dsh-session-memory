@@ -20,7 +20,7 @@ const enginesDsh = pkg.engines?.dsh;
 let versions = [];
 try {
   const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(pkg.name)}`, {
-    headers: { accept: 'application/vnd.npm.install-v1+json, application/json' },
+    headers: { accept: 'application/json' },
     signal: AbortSignal.timeout(15000),
   });
   if (res.ok) {
@@ -79,3 +79,4 @@ const index = {
 writeFileSync(outPath, JSON.stringify(index, null, 2) + '\n', 'utf8');
 console.log(`[make-index] wrote ${outPath} (${versions.length} version(s): ${versions.map((v) => v.version).join(', ')})`);
 if (owner === 'GITHUB_OWNER') console.log('[make-index] 提示：记得设置 GITHUB_OWNER 或改 package.json 里的仓库地址。');
+
