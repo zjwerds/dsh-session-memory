@@ -28,11 +28,11 @@
       "versions": [
         {
           "version": "0.2.0",
-          "publishTimestamp": 1792555946,
+          "publishTimestamp": 1792556136,
           "source": {
             "type": "git",
             "url": "https://github.com/zjwerds/dsh-session-memory",
-            "commit": "9cf7bca26567576538b2301c735f41489acd3f8d"
+            "commit": "2d8fcca0b7f2a58f7db70f5fed9071edbb97a11e"
           },
           "engines": {
             "dsh": ">=0.2.0-rc.1 <0.3.0-0"
