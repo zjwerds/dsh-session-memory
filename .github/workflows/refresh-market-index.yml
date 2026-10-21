@@ -1,0 +1,43 @@
+name: Refresh DSH plugin market index
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-index:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Regenerate index from npm registry
+        env:
+          GITHUB_OWNER: zjwerds
+        run: node docs/make-index.mjs
+
+      - name: Validate index structure
+        run: node docs/validate-index.mjs docs/index.json
+
+      - name: Commit and push if changed
+        run: |
+          if git diff --quiet -- docs/index.json; then
+            echo "index unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/index.json
+          git commit -m "chore: refresh DSH plugin market index"
+          git push
