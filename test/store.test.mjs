@@ -115,49 +115,86 @@ test('store: 写入时条目硬约束（每条 ≤30、总 ≤300、去掉非法
   assert.equal(raw.sessions.s1.chars, record.chars);
 });
 
-test('store: vault v0.2 identity/credentials 分别落库 + history 为 prev/next 对象', async (t) => {
+test('store: vault v3 identity/habits/credentials 分别落库 + history 为三段 prev/next 对象', async (t) => {
   const dir = tempDir(t);
   const store = new MemoryStore({ dataDir: dir });
 
   const first = await store.updateVault(
-    { identity: '称呼：小王；职业：前端工程师', credentials: 'svc:alice/Pa55w0rd' },
-    { reason: '用户提供了身份与账号密码', sessionId: 's1', turn: 3 },
+    {
+      identity: '称呼：小王；职业：前端工程师',
+      habits: ['偏好中文', '先方案后动手'],
+      credentials: 'svc:alice/Pa55w0rd',
+    },
+    { reason: '用户提供了身份、习惯与账号密码', sessionId: 's1', turn: 3 },
   );
   assert.equal(first.changed, true);
   assert.equal(store.vaultIdentity(), '称呼：小王；职业：前端工程师');
+  assert.deepEqual(store.vaultHabits(), ['偏好中文', '先方案后动手']);
   assert.equal(store.vaultCredentials(), 'svc:alice/Pa55w0rd');
 
-  // 只改 credentials，identity 保持不变（缺省段沿用当前值）
+  // 只改 credentials：identity/habits 保持不变（缺省段沿用当前值）
   const second = await store.updateVault({ credentials: 'svc:alice/NewPa55' }, { reason: '用户更正密码', sessionId: 's1', turn: 5 });
   assert.equal(second.changed, true);
   assert.equal(store.vaultIdentity(), '称呼：小王；职业：前端工程师');
+  assert.deepEqual(store.vaultHabits(), ['偏好中文', '先方案后动手']);
   assert.equal(store.vaultCredentials(), 'svc:alice/NewPa55');
 
-  // 两段都不变 → no-op
+  // 三段都不变 → no-op
   const third = await store.updateVault(
-    { identity: '称呼：小王；职业：前端工程师', credentials: 'svc:alice/NewPa55' },
+    {
+      identity: '称呼：小王；职业：前端工程师',
+      habits: ['偏好中文', '先方案后动手'],
+      credentials: 'svc:alice/NewPa55',
+    },
     {},
   );
   assert.equal(third.changed, false);
 
+  // 只改 habits：identity/credentials 保持
+  const fourth = await store.updateVault({ habits: ['偏好中文', '要求快、不弹窗'] }, { reason: '习惯更新', sessionId: 's1', turn: 7 });
+  assert.equal(fourth.changed, true);
+  assert.equal(store.vaultIdentity(), '称呼：小王；职业：前端工程师');
+  assert.equal(store.vaultCredentials(), 'svc:alice/NewPa55');
+  assert.deepEqual(store.vaultHabits(), ['偏好中文', '要求快、不弹窗']);
+
   const raw = JSON.parse(readFileSync(join(dir, VAULT_FILE), 'utf8'));
   assert.equal(raw.version, VAULT_FORMAT_VERSION);
-  assert.equal(raw.version, 2);
-  assert.equal(raw.rev, 2);
+  assert.equal(raw.version, 3);
+  assert.equal(raw.rev, 3);
   assert.equal(raw.identity, '称呼：小王；职业：前端工程师');
+  assert.deepEqual(raw.habits, ['偏好中文', '要求快、不弹窗']);
   assert.equal(raw.credentials, 'svc:alice/NewPa55');
-  assert.equal(raw.history.length, 2);
-  assert.deepEqual(raw.history[0].prev, { identity: '', credentials: '' });
-  assert.deepEqual(raw.history[0].next, { identity: '称呼：小王；职业：前端工程师', credentials: 'svc:alice/Pa55w0rd' });
+  assert.equal(raw.history.length, 3);
+  assert.deepEqual(raw.history[0].prev, { identity: '', habits: [], credentials: '' });
+  assert.deepEqual(raw.history[0].next, {
+    identity: '称呼：小王；职业：前端工程师',
+    habits: ['偏好中文', '先方案后动手'],
+    credentials: 'svc:alice/Pa55w0rd',
+  });
   assert.equal(raw.history[0].turn, 3);
-  assert.deepEqual(raw.history[1].prev, { identity: '称呼：小王；职业：前端工程师', credentials: 'svc:alice/Pa55w0rd' });
-  assert.deepEqual(raw.history[1].next, { identity: '称呼：小王；职业：前端工程师', credentials: 'svc:alice/NewPa55' });
+  assert.deepEqual(raw.history[1].prev, {
+    identity: '称呼：小王；职业：前端工程师',
+    habits: ['偏好中文', '先方案后动手'],
+    credentials: 'svc:alice/Pa55w0rd',
+  });
+  assert.deepEqual(raw.history[1].next, {
+    identity: '称呼：小王；职业：前端工程师',
+    habits: ['偏好中文', '先方案后动手'],
+    credentials: 'svc:alice/NewPa55',
+  });
   assert.equal(raw.history[1].sessionId, 's1');
+  assert.deepEqual(raw.history[2].next, {
+    identity: '称呼：小王；职业：前端工程师',
+    habits: ['偏好中文', '要求快、不弹窗'],
+    credentials: 'svc:alice/NewPa55',
+  });
 
   const reloaded = new MemoryStore({ dataDir: dir });
   assert.equal(reloaded.vaultIdentity(), '称呼：小王；职业：前端工程师');
+  assert.deepEqual(reloaded.vaultHabits(), ['偏好中文', '要求快、不弹窗']);
   assert.equal(reloaded.vaultCredentials(), 'svc:alice/NewPa55');
-  assert.equal(reloaded.vaultSnapshot().rev, 2);
+  assert.equal(reloaded.vaultSnapshot().rev, 3);
+  assert.deepEqual(reloaded.vaultSnapshot().habits, ['偏好中文', '要求快、不弹窗']);
 });
 
 test('store: v1 vault 迁移 —— {text} → credentials，history 字符串映射为对象', (t) => {
@@ -174,6 +211,7 @@ test('store: v1 vault 迁移 —— {text} → credentials，history 字符串�
   const store = new MemoryStore({ dataDir: dir });
   assert.equal(store.isVaultBlocked(), false, 'v1 是合法旧版，不应 fail-closed');
   assert.equal(store.vaultIdentity(), '', 'v1 没有 identity');
+  assert.deepEqual(store.vaultHabits(), [], 'v1 迁移补 habits=[]');
   assert.equal(store.vaultCredentials(), '测试账号:testuser/TestPass123');
   assert.equal(store.vaultSnapshot().rev, 4);
   // 旧 history 的字符串也参与秘密集合（旧密码过滤能力保留）
@@ -321,4 +359,117 @@ test('store: vaultIdentityTexts / vaultCredentialTexts 分列表（task-12 ident
   assert.equal(identities.some((text) => text.includes('TestPass')), false);
   assert.equal(credentials.some((text) => text.includes('王工')), false);
   assert.deepEqual(new MemoryStore({ dataDir: join(dir, 'empty') }).vaultIdentityTexts(), []);
+});
+
+test('store: v2 vault 自动迁移到 v3（habits=[]，history 补 habits 段）', async (t) => {
+  const dir = tempDir(t);
+  writeFileSync(join(dir, VAULT_FILE), JSON.stringify({
+    version: 2,
+    rev: 4,
+    identity: '称呼：小王',
+    credentials: '测试账号:testuser/Pass1234',
+    updatedAt: 123,
+    history: [
+      {
+        at: 1,
+        prev: { identity: '', credentials: '' },
+        next: { identity: '称呼：小王', credentials: '测试账号:testuser/Pass1234' },
+        reason: 'v2 记录',
+        sessionId: 's1',
+        turn: 1,
+      },
+    ],
+  }));
+  const store = new MemoryStore({ dataDir: dir });
+  assert.equal(store.isVaultBlocked(), false, 'v2 是合法旧版，不 fail-closed');
+  assert.equal(store.vaultIdentity(), '称呼：小王');
+  assert.deepEqual(store.vaultHabits(), []);
+  assert.equal(store.vaultCredentials(), '测试账号:testuser/Pass1234');
+  assert.deepEqual(store.vaultSnapshot().habits, []);
+  assert.deepEqual(store.vaultSnapshot().rev, 4);
+  assert.deepEqual(store.vaultState().history[0].prev, { identity: '', habits: [], credentials: '' });
+
+  // 首次写入升级为 v3 文件
+  await store.updateVault({ habits: ['偏好中文'] }, { reason: '习惯', sessionId: 's1', turn: 2 });
+  const raw = JSON.parse(readFileSync(join(dir, VAULT_FILE), 'utf8'));
+  assert.equal(raw.version, 3);
+  assert.deepEqual(raw.habits, ['偏好中文']);
+  assert.equal(raw.identity, '称呼：小王');
+  assert.equal(raw.credentials, '测试账号:testuser/Pass1234');
+});
+
+test('store: habits 硬校验 —— 单条 ≤20、总 ≤120、数组/去重/空白归一', async (t) => {
+  const dir = tempDir(t);
+  const store = new MemoryStore({ dataDir: dir });
+
+  // 单条 21 码点拒绝
+  await assert.rejects(
+    store.updateVault({ habits: ['a'.repeat(21)] }),
+    (error) => error.code === 'BAD_HABITS',
+  );
+  // 总量超 120 拒绝（7 条唯一、每条 19 码点 = 133）
+  await assert.rejects(
+    store.updateVault({ habits: Array.from({ length: 7 }, (_, index) => '一'.repeat(18) + String(index)) }),
+    (error) => error.code === 'BAD_HABITS',
+  );
+  // 非数组拒绝
+  await assert.rejects(store.updateVault({ habits: '偏好中文' }), (error) => error.code === 'BAD_HABITS');
+  // 空条目/非字符串拒绝
+  await assert.rejects(store.updateVault({ habits: [''] }), (error) => error.code === 'BAD_HABITS');
+
+  // 合法：折叠空白、去重、保留顺序
+  const ok = await store.updateVault({ habits: ['  偏好 中文 ', '先方案后动手', '偏好 中文'] });
+  assert.equal(ok.changed, true);
+  assert.deepEqual(store.vaultHabits(), ['偏好 中文', '先方案后动手'], '折叠空白 + 去重');
+
+  // 空列表 = 清空习惯（合法）
+  const cleared = await store.updateVault({ habits: [] });
+  assert.equal(cleared.changed, true);
+  assert.deepEqual(store.vaultHabits(), []);
+});
+
+test('store: v3 文件 habits 超量 → fail-closed（不覆盖）', (t) => {
+  const dir = tempDir(t);
+  writeFileSync(join(dir, VAULT_FILE), JSON.stringify({
+    version: 3,
+    rev: 1,
+    identity: '',
+    habits: Array.from({ length: 7 }, (_, index) => '一'.repeat(18) + String(index)),
+    credentials: '',
+    updatedAt: 1,
+    history: [],
+  }));
+  const blocked = new MemoryStore({ dataDir: dir });
+  assert.equal(blocked.isVaultBlocked(), true);
+  assert.deepEqual(blocked.vaultHabits(), []);
+  assert.ok(readdirSync(dir).some((name) => name.startsWith(`${VAULT_FILE}.corrupt-`)));
+});
+
+test('store: divergence 落盘/重载；非法标签被丢弃为 null（不注入）', async (t) => {
+  const dir = tempDir(t);
+  const store = new MemoryStore({ dataDir: dir });
+  await store.updateProjectMemory('s1', () => ({
+    cwd: 'C:/w',
+    updatedAt: 5,
+    entries: ['条目一'],
+    divergence: { tag: 'AB', strikes: 2, lastTurn: 3 },
+  }), { expectedRev: 0 });
+
+  const reloaded = new MemoryStore({ dataDir: dir });
+  const record = reloaded.projectSnapshot('s1').record;
+  assert.deepEqual(record.divergence, { tag: 'AB', strikes: 2, lastTurn: 3 });
+  assert.deepEqual(record.entries.map((entry) => entry.text), ['条目一']);
+
+  // 非法 divergence（空 tag）→ 落盘时归一为 null
+  await reloaded.updateProjectMemory('s1', (current) => ({
+    ...current,
+    divergence: { tag: '   ', strikes: 9, lastTurn: 9 },
+  }), { expectedRev: 1 });
+  const after = new MemoryStore({ dataDir: dir }).projectSnapshot('s1').record;
+  assert.equal(after.divergence, null);
+  assert.equal(after.entries.length, 1, '清标签不影响条目');
+
+  // 清除标签
+  await reloaded.updateProjectMemory('s1', (current) => ({ ...current, divergence: null }), { expectedRev: 2 });
+  assert.equal(new MemoryStore({ dataDir: dir }).projectSnapshot('s1').record.divergence, null);
 });

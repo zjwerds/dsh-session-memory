@@ -139,7 +139,7 @@ function readJson(file) {
   }
 }
 
-test('apply: 注册两个 section、两个工具、guard、user-profile skill，且注入初始为空', (t) => {
+test('apply: 注册 4 个 section（156/157/160/161）、两个工具、guard、user-profile skill，注入初始为空', (t) => {
   const dir = tempDir(t);
   const { ctx, state } = createFakeCtx();
   apply(ctx, { dataDir: dir });
@@ -147,8 +147,11 @@ test('apply: 注册两个 section、两个工具、guard、user-profile skill，
   assert.equal(name, 'dsh-session-memory');
   assert.deepEqual(inject, ['tools', 'systemPrompt', 'llm', 'skills']);
 
-  assert.equal(state.sections.length, 2);
-  const [projectSection, rulesSection] = state.sections;
+  assert.equal(state.sections.length, 4);
+  assert.deepEqual(state.sections.map((section) => section.order), [156, 157, 160, 161]);
+  const [identitySection, habitsSection, projectSection, rulesSection] = state.sections;
+  assert.equal(identitySection.name, 'plugin:session-memory-identity');
+  assert.equal(habitsSection.name, 'plugin:session-memory-habits');
   assert.equal(projectSection.name, 'plugin:session-memory');
   assert.equal(projectSection.order, 160);
   assert.equal(projectSection.interpolate, false);
@@ -158,27 +161,37 @@ test('apply: 注册两个 section、两个工具、guard、user-profile skill，
   assert.equal(rulesSection.interpolate, false);
   assert.ok(rulesSection.text.includes('vault_read'));
   assert.ok(rulesSection.text.includes('允许在本机使用'));
+  assert.ok(rulesSection.text.includes('账号密码等隐私信息不自动注入'));
 
   assert.deepEqual([...state.tools.keys()].sort(), ['session_memory_read', 'vault_read']);
   assert.equal(state.guards.length, 1);
-  assert.ok(state.skills.has('user-profile'), 'v0.2 skill 改名 user-profile');
-  assert.equal(state.skillRegistrations, 1, 'R3：apply 时只注册一次 skill');
+  assert.ok(state.skills.has('user-profile'), 'skill 名 user-profile');
+  assert.equal(state.skillRegistrations, 1, 'apply 时只注册一次 skill');
   assert.ok(state.listeners.get('session/event').length >= 1);
 
+  // 空 vault：身份/习惯/项目记忆 section 都返回 ''（不产生空注入段）
+  assert.equal(identitySection.text(), '');
+  assert.equal(habitsSection.text(), '');
   assert.equal(projectSection.text({ agent: { session: { id: 'sess-1' } } }), '');
   assert.equal(projectSection.text({}), '');
 });
 
-test('apply: 一个 completed 回合 → 一次 LLM 调用 → 项目记忆注入 + vault v2 落盘 + guard/工具生效', async (t) => {
+test('apply: 一个 completed 回合 → 一次 LLM 调用 → 身份/习惯/项目记忆注入 + vault v3 落盘 + guard/工具生效', async (t) => {
   const dir = tempDir(t);
   const { ctx, state } = createFakeCtx();
   state.llmResponse = JSON.stringify({
     project_memory: ['决定：先做 MVP', '待办：验证 e2e'],
-    identity: { action: 'set', text: FAKE_IDENTITY, reason: '用户自我介绍' },
+    identity: { action: 'set', text: FAKE_IDENTITY, reason: '从对话推断身份' },
+    habits: { action: 'set', items: ['偏好中文', '先方案后动手'], reason: '用户偏好' },
     credentials: { action: 'set', text: FAKE_SECRET, reason: '用户提供了账号密码' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const sectionByName = (sectionName) => state.sections.find((section) => section.name === sectionName);
+  const identitySection = sectionByName('plugin:session-memory-identity');
+  const habitsSection = sectionByName('plugin:session-memory-habits');
+  const projectSection = sectionByName('plugin:session-memory');
+  const rulesSection = sectionByName('plugin:session-memory-rules');
+  assert.deepEqual([identitySection.order, habitsSection.order, projectSection.order, rulesSection.order], [156, 157, 160, 161]);
 
   emit(state, makeSession(), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('决定：先做 MVP'));
@@ -193,10 +206,13 @@ test('apply: 一个 completed 回合 → 一次 LLM 调用 → 项目记忆注�
   assert.ok(call.signal instanceof AbortSignal);
   assert.equal(call.messages.length, 1);
   assert.equal(call.messages[0].role, 'user');
-  assert.ok(call.messages[0].content[0].text.includes('当前项目记忆'));
-  assert.ok(call.messages[0].content[0].text.includes('当前用户身份'));
-  assert.ok(call.messages[0].content[0].text.includes('当前账号密码'));
-  assert.ok(call.messages[0].content[0].text.includes('最新对话'));
+  const promptText = call.messages[0].content[0].text;
+  assert.ok(promptText.includes('当前项目记忆'));
+  assert.ok(promptText.includes('当前用户身份'));
+  assert.ok(promptText.includes('当前用户习惯'));
+  assert.ok(promptText.includes('当前账号密码'));
+  assert.ok(promptText.includes('最新对话'));
+  assert.ok(promptText.includes('divergence'));
 
   const sessionFile = readJson(join(dir, 'session-memory.json'));
   assert.equal(sessionFile.sessions['sess-1'].cwd, 'C:/work');
@@ -204,31 +220,48 @@ test('apply: 一个 completed 回合 → 一次 LLM 调用 → 项目记忆注�
     sessionFile.sessions['sess-1'].chars,
     codePointLength('决定：先做 MVP') + codePointLength('待办：验证 e2e'),
   );
+  assert.equal(sessionFile.sessions['sess-1'].divergence, null, 'status 缺失 → none → 无标签');
   const vaultFile = readJson(join(dir, 'vault.json'));
-  assert.equal(vaultFile.version, 2);
+  assert.equal(vaultFile.version, 3);
   assert.equal(vaultFile.identity, FAKE_IDENTITY);
+  assert.deepEqual(vaultFile.habits, ['偏好中文', '先方案后动手']);
   assert.equal(vaultFile.credentials, FAKE_SECRET);
   assert.equal(vaultFile.history.length, 1);
-  assert.deepEqual(vaultFile.history[0].prev, { identity: '', credentials: '' });
-  assert.deepEqual(vaultFile.history[0].next, { identity: FAKE_IDENTITY, credentials: FAKE_SECRET });
-  assert.equal(vaultFile.history[0].reason, '用户自我介绍');
+  assert.deepEqual(vaultFile.history[0].prev, { identity: '', habits: [], credentials: '' });
+  assert.deepEqual(vaultFile.history[0].next, {
+    identity: FAKE_IDENTITY,
+    habits: ['偏好中文', '先方案后动手'],
+    credentials: FAKE_SECRET,
+  });
+  assert.equal(vaultFile.history[0].reason, '从对话推断身份');
   assert.equal(vaultFile.history[0].sessionId, 'sess-1');
   assert.equal(vaultFile.history[0].turn, 1);
 
+  // 注入顺序：身份 156 → 习惯 157 → 项目记忆 160 → 规则 161；credentials 绝不注入。
+  const identityText = identitySection.text();
+  const habitsText = habitsSection.text();
   const sectionText = projectSection.text({ agent: { session: { id: 'sess-1' } } });
+  const rulesText = rulesSection.text;
+  assert.ok(identityText.startsWith('## 用户身份（自动注入）'));
+  assert.ok(identityText.includes(FAKE_IDENTITY));
+  assert.ok(habitsText.startsWith('## 用户习惯（自动注入）'));
+  assert.ok(habitsText.includes('- 偏好中文'));
   assert.ok(sectionText.startsWith('## 本对话项目记忆'));
   assert.ok(sectionText.includes('- 决定：先做 MVP'));
-  // vault 明文（identity/credentials）绝不进 system prompt 注入段。
-  assert.equal(sectionText.includes(FAKE_SECRET), false);
+  for (const injected of [identityText, habitsText, sectionText, rulesText]) {
+    assert.equal(injected.includes(FAKE_SECRET), false, 'credentials 绝不注入');
+  }
+  // 身份/习惯本身会注入，但不了泄露到项目记忆注入段。
   assert.equal(sectionText.includes(FAKE_IDENTITY), false);
 
   assert.equal(state.skills.get('user-profile').content.includes(FAKE_SECRET), false);
   // R3：skill 只在 apply 时注册一次、正文静态；vault 写入后不再 dispose+register。
   assert.equal(state.skillRegistrations, 1, 'vault 写入后不得重注册 skill');
   assert.ok(state.skills.get('user-profile').content.includes('vault_read'));
+  assert.ok(state.skills.get('user-profile').content.includes('scope'));
   assert.equal(state.skills.get('user-profile').content.includes('非空'), false, 'skill 正文不含运行期状态');
 
-  // v0.2 guard balanced：本地工具放行（用户可能正需要密码）；网络/对外工具拦。
+  // guard balanced：本地工具放行（用户可能正需要密码）；网络/对外工具拦。
   assert.equal(
     state.guards[0]({ name: 'pwsh', arguments: { command: `echo ${FAKE_SECRET}` } }),
     undefined,
@@ -239,16 +272,19 @@ test('apply: 一个 completed 回合 → 一次 LLM 调用 → 项目记忆注�
   assert.equal(denyReason.includes(FAKE_SECRET), false);
   assert.equal(state.guards[0]({ name: 'web_search', arguments: { query: 'git status' } }), undefined);
 
-  // vault_read：scope all/identity/credentials，各字段 <vault_secret> 包裹。
+  // vault_read：scope all/identity/habits/credentials，各字段 <vault_secret> 包裹。
   const vaultValue = await state.tools.get('vault_read').execute({ query: '小王' }, {});
   assert.deepEqual(vaultValue, {
     scope: 'all',
     identity: `<vault_secret>${FAKE_IDENTITY}</vault_secret>`,
+    habits: '<vault_secret>偏好中文；先方案后动手</vault_secret>',
     credentials: `<vault_secret>${FAKE_SECRET}</vault_secret>`,
     matched: true,
   });
   const identityValue = await state.tools.get('vault_read').execute({ scope: 'identity' }, {});
   assert.deepEqual(identityValue, { scope: 'identity', identity: `<vault_secret>${FAKE_IDENTITY}</vault_secret>` });
+  const habitsValue = await state.tools.get('vault_read').execute({ scope: 'habits' }, {});
+  assert.deepEqual(habitsValue, { scope: 'habits', habits: '<vault_secret>偏好中文；先方案后动手</vault_secret>' });
   const credentialsValue = await state.tools.get('vault_read').execute({ scope: 'credentials' }, {});
   assert.deepEqual(credentialsValue, { scope: 'credentials', credentials: `<vault_secret>${FAKE_SECRET}</vault_secret>` });
 
@@ -292,7 +328,7 @@ test('apply: reasoningEffort 被适配器拒绝（INVALID_REASONING_EFFORT）→
     { text: JSON.stringify({ project_memory: ['重试后的条目'], longterm: { action: 'none' } }) },
   );
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '记住：重试后条目' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('重试后的条目'));
@@ -312,7 +348,7 @@ test('apply: 首轮无文本且 finish=max-tokens → 放大 maxTokens 重试一
     { text: JSON.stringify({ project_memory: ['放大预算后的条目'], longterm: { action: 'none' } }) },
   );
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '记住：放大预算' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('放大预算后的条目'));
@@ -360,7 +396,7 @@ test('apply: 模型输出坏 JSON → 放弃本回合、旧记忆不被破坏、
     longterm: { action: 'none' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '记住：保留的旧条目' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('决定：保留的旧条目'));
@@ -389,7 +425,7 @@ test('apply: 模型给空项目记忆数组 → 保留旧记忆不动；longterm
     longterm: { action: 'none' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '第一回合' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('条目甲'));
@@ -412,7 +448,7 @@ test('apply: R1 密码/账号写进 project memory → 条目被丢弃；全被�
     longterm: { action: 'set', text: '测试账号:testuser/TestPass123', reason: '用户提供' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '账号 testuser 密码 TestPass123，记到长期记忆' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('旧条目'));
@@ -456,7 +492,7 @@ test('apply: R5 解析失败 → 同 prompt 追加指令重试一次并成功落
     { text: JSON.stringify({ project_memory: ['解析重试成功条目'], longterm: { action: 'none' } }) },
   );
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '第一回合' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('解析重试成功条目'));
@@ -478,7 +514,7 @@ test('apply: task-10 密码从未进 vault（longterm.action=none）→ 凭据�
     longterm: { action: 'none' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '我的密码是 TestPass123' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('决定：先做 MVP'));
@@ -503,7 +539,7 @@ test('apply: credentialPatternGuard:false 时凭据形态过滤关闭（配置�
     longterm: { action: 'none' },
   });
   apply(ctx, { dataDir: dir, credentialPatternGuard: false });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '第一回合' }), completedEvent(1));
   await waitFor(() => projectSection.text({ agent: { session: { id: 'sess-1' } } }).includes('TestPass123'));
@@ -522,7 +558,7 @@ test('apply: v0.2 identity/credentials 分段落库；只更新一段时另一�
     credentials: { action: 'set', text: '测试账号:testuser/TestPass123', reason: '用户提供' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '叫我小王，账号 testuser 密码 TestPass123' }), completedEvent(1));
   await waitFor(() => readJson(join(dir, 'vault.json'))?.identity === '称呼：小王');
@@ -539,11 +575,19 @@ test('apply: v0.2 identity/credentials 分段落库；只更新一段时另一�
   await new Promise((resolve) => setTimeout(resolve, 120));
 
   const vaultFile = readJson(join(dir, 'vault.json'));
-  assert.equal(vaultFile.version, 2);
+  assert.equal(vaultFile.version, 3);
   assert.equal(vaultFile.credentials, '测试账号:testuser/TestPass123', '未给出的段保持当前值');
   assert.equal(vaultFile.history.length, 2);
-  assert.deepEqual(vaultFile.history[1].prev, { identity: '称呼：小王', credentials: '测试账号:testuser/TestPass123' });
-  assert.deepEqual(vaultFile.history[1].next, { identity: '称呼：王工', credentials: '测试账号:testuser/TestPass123' });
+  assert.deepEqual(vaultFile.history[1].prev, {
+    identity: '称呼：小王',
+    habits: [],
+    credentials: '测试账号:testuser/TestPass123',
+  });
+  assert.deepEqual(vaultFile.history[1].next, {
+    identity: '称呼：王工',
+    habits: [],
+    credentials: '测试账号:testuser/TestPass123',
+  });
 
   // 注入段绝不出现 identity/credentials 片段
   const section = projectSection.text({ agent: { session: { id: 'sess-1' } } });
@@ -560,7 +604,7 @@ test('apply: A.6 项目记忆过滤 identity 片段（用户身份不得进项�
     credentials: { action: 'none' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '叫我小王' }), completedEvent(1));
   await waitFor(() => readJson(join(dir, 'vault.json'))?.identity === '称呼：小王');
@@ -589,7 +633,7 @@ test('apply: task-12 短 identity 片段（王工/小王/前端工程师）在�
     credentials: { action: 'none' },
   });
   apply(ctx, { dataDir: dir });
-  const projectSection = state.sections[0];
+  const projectSection = state.sections.find((section) => section.name === 'plugin:session-memory');
 
   emit(state, makeSession({ turn: 1, text: '叫我王工，职业前端工程师' }), completedEvent(1));
   await waitFor(() => readJson(join(dir, 'vault.json'))?.identity === '称呼：王工；职业：前端工程师');
@@ -673,4 +717,109 @@ test('apply: guardMode 接线 —— off 不注册 guard；strict 本地也拒�
     GUARD_DENY_REASON_NETWORK,
     '未授权域名拒绝',
   );
+});
+
+test('apply: divergence 三次 —— new/第2次冻结，第3次 commit 接受并清空；冻结期身份/习惯仍更新', async (t) => {
+  const dir = tempDir(t);
+  const { ctx, state } = createFakeCtx();
+  const record = () => readJson(join(dir, 'session-memory.json'))?.sessions['sess-1'];
+  const identitySection = () => state.sections.find((section) => section.name === 'plugin:session-memory-identity');
+  const habitsSection = () => state.sections.find((section) => section.name === 'plugin:session-memory-habits');
+  const projectText = () => state.sections
+    .find((section) => section.name === 'plugin:session-memory')
+    .text({ agent: { session: { id: 'sess-1' } } });
+
+  // 第 1 回合：全新话题 → new，冻结项目记忆；但身份/习惯/凭据允许更新
+  state.llmResponse = JSON.stringify({
+    project_memory: ['新话题：先做插件'],
+    identity: { action: 'set', text: '职业：开发人员', reason: '从对话推断' },
+    habits: { action: 'set', items: ['偏好中文'], reason: '习惯' },
+    credentials: { action: 'set', text: FAKE_SECRET, reason: '凭据' },
+    divergence: { status: 'new', tag: '插件', same: true },
+  });
+  apply(ctx, { dataDir: dir });
+  emit(state, makeSession({ turn: 1, text: '我现在在开发插件' }), completedEvent(1));
+  await waitFor(() => record()?.divergence?.strikes === 1);
+  assert.deepEqual(record().divergence, { tag: '插件', strikes: 1, lastTurn: 1 });
+  assert.deepEqual(record().entries, [], 'new 冻结：项目记忆不写入');
+  assert.equal(identitySection().text(), '## 用户身份（自动注入）\n职业：开发人员\n');
+  assert.ok(habitsSection().text().includes('- 偏好中文'));
+  assert.equal(readJson(join(dir, 'vault.json')).credentials, FAKE_SECRET, '冻结不影响凭据写入');
+
+  // 第 2 回合：同话题 continuing → strikes=2，仍冻结
+  state.llmResponse = JSON.stringify({
+    project_memory: ['新话题：先做插件'],
+    identity: { action: 'none' },
+    habits: { action: 'none' },
+    credentials: { action: 'none' },
+    divergence: { status: 'continuing', tag: '插件', same: true },
+  });
+  emit(state, makeSession({ turn: 2, text: '继续聊插件' }), completedEvent(2));
+  await waitFor(() => record()?.divergence?.strikes === 2);
+  assert.deepEqual(record().entries, [], '第 2 次仍冻结');
+
+  // 第 3 回合：同话题第 3 次 → 等同 commit：接受本轮项目记忆并清空标签
+  state.llmResponse = JSON.stringify({
+    project_memory: ['新话题：先做插件'],
+    identity: { action: 'none' },
+    habits: { action: 'none' },
+    credentials: { action: 'none' },
+    divergence: { status: 'continuing', tag: '插件', same: true },
+  });
+  emit(state, makeSession({ turn: 3, text: '还是插件' }), completedEvent(3));
+  await waitFor(() => record()?.divergence === null && record()?.entries?.length === 1);
+  assert.deepEqual(record().entries.map((entry) => entry.text), ['新话题：先做插件']);
+  assert.equal(record().divergence, null, 'commit 后标签清空（不注入、不残留）');
+  assert.ok(projectText().includes('新话题：先做插件'));
+});
+
+test('apply: divergence none/无关话题清空旧标签并正常写入项目记忆', async (t) => {
+  const dir = tempDir(t);
+  const { ctx, state } = createFakeCtx();
+  const record = () => readJson(join(dir, 'session-memory.json'))?.sessions['sess-1'];
+
+  state.llmResponse = JSON.stringify({
+    project_memory: ['旧话题条目'],
+    divergence: { status: 'new', tag: 'AB', same: true },
+  });
+  apply(ctx, { dataDir: dir });
+  emit(state, makeSession({ turn: 1, text: '新话题' }), completedEvent(1));
+  await waitFor(() => record()?.divergence?.strikes === 1);
+  state.llmResponse = JSON.stringify({
+    project_memory: ['旧话题条目'],
+    divergence: { status: 'continuing', tag: 'AB', same: true },
+  });
+  emit(state, makeSession({ turn: 2, text: '继续' }), completedEvent(2));
+  await waitFor(() => record()?.divergence?.strikes === 2);
+
+  state.llmResponse = JSON.stringify({
+    project_memory: ['正常项目条目'],
+    divergence: { status: 'none', tag: '', same: false },
+  });
+  emit(state, makeSession({ turn: 3, text: '回到项目本身' }), completedEvent(3));
+  await waitFor(() => record()?.divergence === null && record()?.entries?.length === 1);
+  assert.equal(record().divergence, null);
+  assert.deepEqual(record().entries.map((entry) => entry.text), ['正常项目条目']);
+});
+
+test('apply: divergence same=false（无关延续）重置标签并接受项目记忆', async (t) => {
+  const dir = tempDir(t);
+  const { ctx, state } = createFakeCtx();
+  const record = () => readJson(join(dir, 'session-memory.json'))?.sessions['sess-1'];
+  state.llmResponse = JSON.stringify({
+    project_memory: ['话题 A'],
+    divergence: { status: 'new', tag: 'A', same: true },
+  });
+  apply(ctx, { dataDir: dir });
+  emit(state, makeSession({ turn: 1, text: '话题 A' }), completedEvent(1));
+  await waitFor(() => record()?.divergence?.strikes === 1);
+
+  state.llmResponse = JSON.stringify({
+    project_memory: ['话题 B'],
+    divergence: { status: 'continuing', tag: 'A', same: false },
+  });
+  emit(state, makeSession({ turn: 2, text: '其实是别的话题' }), completedEvent(2));
+  await waitFor(() => record()?.divergence === null && record()?.entries?.length === 1);
+  assert.equal(record().divergence, null);
+  assert.deepEqual(record().entries.map((entry) => entry.text), ['话题 B']);
 });
