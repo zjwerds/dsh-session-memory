@@ -28,9 +28,11 @@
       "versions": [
         {
           "version": "0.2.0",
-          "publishTimestamp": 1792553527,
+          "publishTimestamp": 1792555463,
           "source": {
-            "type": "npm"
+            "type": "git",
+            "url": "https://github.com/zjwerds/dsh-session-memory",
+            "commit": "b9b60a54cf85c65d36738ba982b6dc05e45df0cf"
           },
           "engines": {
             "dsh": ">=0.2.0-rc.1 <0.3.0-0"
