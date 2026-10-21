@@ -31,3 +31,19 @@ https://<你>.github.io/dsh-session-memory/index.json
 - **不要**把 ~/.dsh/memory/（你的项目记忆/凭据数据）复制进本目录或提交到 Git。
 - 本插件在用户机器上运行后，数据只落在用户自己的 $DSH_HOME/memory/。
 
+
+## 发版后同步 npmmirror（可选，通常自动）
+
+```powershell
+# 触发镜像同步；约 15-30 秒后生效
+curl.exe -X PUT https://registry.npmmirror.com/dsh-session-memory/sync
+```
+
+验证镜像：
+
+```powershell
+npm view dsh-session-memory version --registry https://registry.npmmirror.com/
+```
+
+> 新包/新版本首次同步可能延迟；users 也可临时在安装源里选「npm 官方源」。
+> 不要安装 `0.0.0-stage`（发布审核占位），`latest` 才是正式版本。
