@@ -2,8 +2,10 @@
 #
 # 通过 package.json 的 `dsh.bundle.patch` 作为 profile bundle 层应用；行是裸插件名，
 # host 半（exports "."）负责：
-#   - 每回合 turn/end 后异步一次 LLM 调用 → 项目记忆（注入当前会话）+ 用户身份/账号密码；
-#   - system-prompt section（order 160 项目记忆、161 固定规则）；
+#   - 每回合 turn/end 后异步一次 LLM 调用 → 项目记忆（注入当前会话）+ 用户身份/习惯/账号密码；
+#   - system-prompt section（order 156 身份、157 习惯、160 项目记忆、161 固定规则；
+#     身份/习惯/项目记忆自动注入，账号密码绝不注入）；
+#   - divergence 三次标签状态机（话题差异大时冻结项目记忆，连续第三次才允许写入）；
 #   - session_memory_read / vault_read 工具、user-profile skill、分级外发 guard。
 #
 # 可选 config（全部可缺省，完整字段见 lib/config.js）：
@@ -13,7 +15,9 @@
 #     model: ''              # 空 = 会话自己的路由；再缺省 deepseek-flash
 #     projectMaxChars: 300
 #     entryMaxChars: 30
-#     identityMaxChars: 60     # 用户身份预算（称呼/姓名/职业/语言/邮箱/手机）
+#     identityMaxChars: 60     # 用户身份预算（职业/角色、语言、专业领域等，可推断）
+#     habitsMaxChars: 120      # 用户习惯总量预算（v0.3）
+#     habitEntryMaxChars: 20   # 单条用户习惯预算（v0.3）
 #     credentialsMaxChars: 60  # 账号密码预算（longtermMaxChars 为兼容别名）
 #     guardMode: 'balanced'    # balanced | strict | off：只拦危险外发，本地工具放行
 #     trustedDomains: []       # balanced 下 web_fetch 白名单域名
