@@ -13,8 +13,8 @@
 #     dataDir: ''            # 空 = $DSH_HOME/memory
 #     provider: ''           # 空 = 会话自己的路由；再缺省 deepseek-official
 #     model: ''              # 空 = 会话自己的路由；再缺省 deepseek-flash
-#     projectMaxChars: 300
-#     entryMaxChars: 30
+#     projectMaxChars: 600
+#     entryMaxChars: 40
 #     identityMaxChars: 60     # 用户身份预算（职业/角色、语言、专业领域等，可推断）
 #     habitsMaxChars: 120      # 用户习惯总量预算（v0.3）
 #     habitEntryMaxChars: 20   # 单条用户习惯预算（v0.3）

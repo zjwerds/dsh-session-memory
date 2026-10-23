@@ -2,11 +2,11 @@
 
 DeepSeek Harness（DSH）的 **会话记忆插件**：每个用户回合结束后在后台静默整理一次记忆，把「用户身份 / 用户习惯 / 本对话项目记忆」自动注入下一次请求，并把「用户身份 / 习惯 / 账号密码」长期保存在 `$DSH_HOME` 下、账号密码只通过 skill + 工具按需读取。零运行时依赖、host-only。
 
-> 一句话：**对话内自动记重点（≤300 字），跨对话记住你、你的习惯和你的凭据；身份/习惯/项目记忆自动注入，账号密码绝不自动注入。**
+> 一句话：**对话内自动记重点（≤600 字），跨对话记住你、你的习惯和你的凭据；身份/习惯/项目记忆自动注入，账号密码绝不自动注入。**
 
 ## 功能
 
-- **项目记忆（每对话独立）**：`turn/end` 后约 1 秒后台完成，一次模型调用同时产出项目记忆、身份、习惯、账号密码与话题标签；每条 ≤30 字符、同一对话累计 ≤300 字符，自动注入**当前会话**的 system prompt；别的会话可通过 `session_memory_read(all:true)` 只读查看。
+- **项目记忆（每对话独立）**：`turn/end` 后约 1 秒后台完成，一次模型调用同时产出项目记忆、身份、习惯、账号密码与话题标签；每条 ≤40 字符、同一对话累计 ≤600 字符，自动注入**当前会话**的 system prompt；别的会话可通过 `session_memory_read(all:true)` 只读查看。
 - **长期记忆 v3（结构化）**：`$DSH_HOME/memory/vault.json`，`identity`（职业/角色、语言、专业领域等，≤60；**从对话判断/推断**，如「我现在在开发插件」→「职业：开发人员」）、`habits`（长期稳定习惯/偏好，每条 ≤20、总 ≤120、去重）、`credentials`（账号密码类，≤60），带历史版本。
 - **自动注入（顺序固定）**：用户身份（order 156）→ 用户习惯（157）→ 本对话项目记忆（160）→ 固定规则（161）；vault 的 **credentials 永不注入**。
 - **按需读取**：注册 `user-profile` skill + `vault_read(scope=all|identity|habits|credentials)`；只有用户明确索要时才读取，返回值用 `<vault_secret>` 包裹。
@@ -42,8 +42,8 @@ dsh plugin --profile web add dsh-session-memory@0.3.0
 ```yaml
 - id: session-memory
   config:
-    projectMaxChars: 300
-    entryMaxChars: 30
+    projectMaxChars: 600
+    entryMaxChars: 40
     identityMaxChars: 60
     habitsMaxChars: 120
     habitEntryMaxChars: 20

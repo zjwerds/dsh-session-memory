@@ -42,14 +42,14 @@ test('normalizeEntryText: trim、换行折叠、去空、非字符串', () => {
   assert.equal(normalizeEntryText(null), null);
 });
 
-test('fitEntries: 单条超 30 码点被截断、去重、跳过非法项', () => {
+test('fitEntries: 单条超 40 码点被截断、去重、跳过非法项', () => {
   const longEntry = '一'.repeat(45);
   const result = fitEntries([longEntry, 'A', 'A', '', null, 7, 'B'], {
     entryMaxChars: DEFAULT_ENTRY_MAX_CHARS,
     projectMaxChars: DEFAULT_PROJECT_MAX_CHARS,
   });
   assert.deepEqual(result.entries.slice(1), ['A', 'B']);
-  assert.equal(codePointLength(result.entries[0]), 30);
+  assert.equal(codePointLength(result.entries[0]), 40);
   assert.equal(result.truncated, 1);
   assert.equal(result.chars, sumEntriesChars(result.entries));
   assert.ok(result.chars <= DEFAULT_PROJECT_MAX_CHARS);
@@ -115,4 +115,9 @@ test('stripCodeFences / extractJsonObject: 去围栏取第一个 { 到最后一�
   assert.equal(extractJsonObject('没有 JSON'), null);
   assert.equal(extractJsonObject('前 {a:1} 后'), '{a:1}');
   assert.equal(extractJsonObject(''), null);
+});
+
+test('defaults: 项目记忆总量 600 / 单条 40', () => {
+  assert.equal(DEFAULT_PROJECT_MAX_CHARS, 600);
+  assert.equal(DEFAULT_ENTRY_MAX_CHARS, 40);
 });

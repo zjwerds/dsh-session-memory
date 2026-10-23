@@ -1,7 +1,7 @@
 {
   "name": "dsh-session-memory",
-  "version": "0.3.0",
-  "description": "DeepSeek Harness host-only memory: per-turn project memory (<=300 chars, auto-injected per session) + structured long-term vault v3 (identity/habits auto-injected; credentials only on demand via user-profile skill + scoped vault_read; tiered outbound-only leak guard; program-enforced 3-strike divergence tags).",
+  "version": "0.3.1",
+  "description": "DeepSeek Harness host-only memory: per-turn project memory (<=600 chars, auto-injected per session) + structured long-term vault v3 (identity/habits auto-injected; credentials only on demand via user-profile skill + scoped vault_read; tiered outbound-only leak guard; program-enforced 3-strike divergence tags).",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

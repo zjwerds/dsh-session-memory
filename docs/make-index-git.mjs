@@ -37,8 +37,8 @@ const index = {
     name: pkg.name,
     title: { en: 'Session Memory', zh: '会话记忆' },
     description: {
-      en: 'Per-turn project memory (<=300 chars, auto-injected per session) + long-term identity/credentials vault ($DSH_HOME, on-demand skill + vault_read, tiered outbound-only leak guard). Zero dependencies, host-only.',
-      zh: '每回合后台整理项目记忆（单条≤30、同对话≤300 字，自动注入当前会话）+ 长期身份/账号密码（$DSH_HOME，skill 按需读取、分级外发护栏）。零依赖、host-only。',
+      en: 'Per-turn project memory (<=600 chars, auto-injected per session) + long-term identity/credentials vault ($DSH_HOME, on-demand skill + vault_read, tiered outbound-only leak guard). Zero dependencies, host-only.',
+      zh: '每回合后台整理项目记忆（单条≤40、同对话≤600 字，自动注入当前会话）+ 长期身份/账号密码（$DSH_HOME，skill 按需读取、分级外发护栏）。零依赖、host-only。',
     },
     icon: 'icon.svg',
     author: pkg.author || '',
